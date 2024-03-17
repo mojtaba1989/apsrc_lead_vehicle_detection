@@ -1,0 +1,24 @@
+<launch>
+  <arg name="radar_pc_topic" default="/radar_fc/as_tx/objects"/>
+  <arg name="lidar_objs_topic" default="/detection/lidar_objects"/>
+  <!-- Search area for lead vehicle -->
+  <arg name="roi_max_lat" default="2.0"/>
+  <arg name="roi_min_lng" default="1.0"/>
+  <arg name="roi_max_dist" default="2.0"/>
+  <!-- Emergency Stop Signal -->
+  <arg name="min_time_gap" default="0.9"/>
+  <arg name="min_lead_ego_speed_rate" default="0.5"/>
+  <!-- Visualization -->
+  <arg name="visulization" default="true"/>
+
+  <node pkg="apsrc_lead_vehicle_detection" type="apsrc_lead_vehicle_detection_node" name="apsrc_lead_vehicle_detection" output="screen" >
+    <param name="radar_pc_topic" value="$(arg radar_pc_topic)"/>
+    <param name="lidar_objs_topic" value="$(arg lidar_objs_topic)"/>
+    <param name="roi_max_lat" value="$(arg roi_max_lat)"/>
+    <param name="roi_min_lng" value="$(arg roi_min_lng)"/>
+    <param name="roi_max_dist" value="$(arg roi_max_dist)"/>
+    <param name="min_time_gap" value="$(arg min_time_gap)"/>
+    <param name="min_lead_ego_speed_rate" value="$(arg min_lead_ego_speed_rate)"/>
+    <param name="visulization" value="$(arg visulization)"/>
+  </node>
+</launch>

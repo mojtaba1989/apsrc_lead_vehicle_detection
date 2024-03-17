@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>apsrc_lead_vehicle_detection</name>
+  <version>1.0.0</version>
+  <description>The apsrc_lead_vehicle_detection package</description>
+  <author email="mbahramg@mtu.edu">Mojtaba Bahramgiri</author>
+  <maintainer email="mbahramg@mtu.edu">Mojtaba Bahramgiri</maintainer>
+  <license>TODO</license>
+  <buildtool_depend>catkin</buildtool_depend>
+  <depend>autoware_msgs</depend>
+  <depend>apsrc_msgs</depend>
+  <depend>nodelet</depend>
+  <depend>roscpp</depend>
+  <depend>roslib</depend>
+  <depend>roslint</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>radar_msgs</depend>
+  <depend>derived_object_msgs</depend>
+  <depend>tf2_ros</depend>
+  <export>
+    <nodelet plugin="${prefix}/nodelets.xml"/>
+  </export>
+</package>

@@ -1,0 +1,9 @@
+<library path="lib/libapsrc_lead_vehicle_detection_nodelets">
+  <class name="apsrc_lead_vehicle_detection/apsrc_lead_vehicle_detection_nodelet"
+         type="apsrc_lead_vehicle_detection::ApsrcLeadVehicleDetectionNl"
+         base_class_type="nodelet::Nodelet">
+    <description>
+      Radar LiDAR fusion-based lead vehicle detection/localization
+    </description>
+  </class>
+</library>

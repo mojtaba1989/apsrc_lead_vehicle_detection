@@ -1,0 +1,8 @@
+prefix=/usr/local
+
+Name: apsrc_lead_vehicle_detection
+Description: Description of apsrc_lead_vehicle_detection
+Version: 1.0.0
+Cflags: -I${prefix}/include
+Libs: -L${prefix}/lib -lapsrc_lead_vehicle_detection_nodelets
+Requires: apsrc_msgs autoware_msgs geometry_msgs nodelet roscpp roslib roslint std_msgs radar_msgs derived_object_msgs tf2_ros
