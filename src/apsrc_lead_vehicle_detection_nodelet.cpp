@@ -2,8 +2,6 @@
 #include <vector>
 #include <apsrc_lead_vehicle_detection/apsrc_lead_vehicle_detection_nodelet.hpp>
 
-
-
 namespace apsrc_lead_vehicle_detection
 {
 ApsrcLeadVehicleDetectionNl::ApsrcLeadVehicleDetectionNl()
@@ -305,8 +303,6 @@ bool ApsrcLeadVehicleDetectionNl::emergency_stop_func(autoware_msgs::DetectedObj
   }
   return false;
 }
-
 }  // namespace apsrc_lead_vehicle_detection
-
 PLUGINLIB_EXPORT_CLASS(apsrc_lead_vehicle_detection::ApsrcLeadVehicleDetectionNl,
                        nodelet::Nodelet);
