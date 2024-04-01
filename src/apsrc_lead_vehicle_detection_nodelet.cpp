@@ -19,7 +19,7 @@ void ApsrcLeadVehicleDetectionNl::onInit()
   loadParams();
 
   // Publishers
-  lead_vehicle_pub_ = nh_.advertise<apsrc_msgs::LaedVehicle>("/lead_vehicle/track", 10, true);
+  lead_vehicle_pub_ = nh_.advertise<apsrc_msgs::LeadVehicle>("/lead_vehicle/track", 10, true);
   marker_pub_ = nh_.advertise<visualization_msgs::Marker>("/lead_vehicle/markers", 10, true);
 
   // Subscribers
@@ -47,108 +47,43 @@ void ApsrcLeadVehicleDetectionNl::loadParams()
 
 void ApsrcLeadVehicleDetectionNl::radarPointCloudCallback(const derived_object_msgs::ObjectWithCovarianceArray::ConstPtr& radar_pc)
 {
-  derived_object_msgs::ObjectWithCovariance ref;
-  ref.pose.pose.position.x = 0;
-  ref.pose.pose.position.y = 0;
-  bool found_any = false;
+	if (lead_.initilized){
+  	size_t closes_object_loc_id = 0;
+		float min_dist = apsrc_lead_vehicle_detection::radar_KFobj_dist_func(radar_pc->objects[0], lead_);
+		for (size_t i = 0; i < radar_pc->objects.size(); ++i) {
+			float dist = apsrc_lead_vehicle_detection::radar_KFobj_dist_func(radar_pc->objects[i], lead_);
+			if (dist <= min_dist){
+				min_dist = dist;
+				closes_object_loc_id = i;
+			}
+		}
+//		need mutex
+		apsrc_lead_vehicle_detection::KF_update_radar(lead_,
+																								 radar_pc->objects[closes_object_loc_id].pose.pose.position.x,
+																								 radar_pc->objects[closes_object_loc_id].twist.twist.linear.x,
+																								 radar_pc->objects[closes_object_loc_id].pose.pose.position.y,
+																								 radar_pc->objects[closes_object_loc_id].twist.twist.linear.y
+                                                 );
+		
+	}
+}
 
-  size_t closes_object_loc_id = 0;
-  bool found = false;
-  if (radar_lead_found_){
-    if(lidar_lead_found_){
-      std::vector<size_t> within_range(10);
-      found_any = false;
-      for (size_t i = 0; i < radar_pc->objects.size(); ++i){
-        float dist = apsrc_lead_vehicle_detection::lidar_radar_dist_func(lidar_lead_t_, radar_pc->objects[i]);
-        if (dist < roi_max_dist_){
-          within_range.push_back(i);
-          found_any = true;
-        }
-      }
-      if (found_any){
-        double min_dist = apsrc_lead_vehicle_detection::radar_objs_dist_func(radar_lead_, radar_pc->objects[within_range[0]]);
-        for(size_t j = 0; j < within_range.size(); ++j){
-          float dist = apsrc_lead_vehicle_detection::radar_objs_dist_func(radar_lead_, radar_pc->objects[within_range[j]]);
-          if (dist <= min_dist){
-            min_dist = dist;
-            closes_object_loc_id = within_range[j];
-            found = true;
-          }
-        } 
-      }
-    }else{
-      std::vector<size_t> within_range(10);
-      found_any = false;
-      for (size_t i = 0; i < radar_pc->objects.size(); ++i){
-        float dist = apsrc_lead_vehicle_detection::radar_objs_dist_func(radar_lead_, radar_pc->objects[i]);
-        if (dist < roi_max_dist_){
-          within_range.push_back(i);
-          found_any = true;
-        }
-      }
-      if (found_any){
-        double min_dist = apsrc_lead_vehicle_detection::radar_objs_dist_func(ref, radar_pc->objects[within_range[0]]);
-        for(size_t j = 0; j < within_range.size(); ++j){
-          float dist = apsrc_lead_vehicle_detection::radar_objs_dist_func(ref, radar_pc->objects[within_range[j]]);
-          if (dist <= min_dist){
-            min_dist = dist;
-            closes_object_loc_id = within_range[j];
-            found = true;
-          }
-        }
-      }
-    }
-  } else {
-    if(lidar_lead_found_){
-      std::vector<size_t> within_range(10);
-      found_any = false;
-      for (size_t i = 0; i < radar_pc->objects.size(); ++i){
-        float dist = apsrc_lead_vehicle_detection::lidar_radar_dist_func(lidar_lead_t_, radar_pc->objects[i]);
-        if (dist < roi_max_dist_){
-          within_range.push_back(i);
-          found_any = true;
-        }
-      }
-      if (found_any){
-        double min_dist = apsrc_lead_vehicle_detection::radar_objs_dist_func(ref, radar_pc->objects[within_range[0]]);
-        for(size_t j = 0; j < within_range.size(); ++j){
-          float dist = apsrc_lead_vehicle_detection::radar_objs_dist_func(ref, radar_pc->objects[within_range[j]]);
-          if (dist <= min_dist){
-            min_dist = dist;
-            closes_object_loc_id = within_range[j];
-            found = true;
-          }
-        }
-      }
-    }else{
-      found = false;
-    }
-  }
-  
-  apsrc_msgs::LaedVehicle msg;
+void ApsrcLeadVehicleDetectionNl::timerCallBack()
+{
+  apsrc_msgs::LeadVehicle msg;
   msg.emergency_stop = stop_now_;
-  if (found && radar_pc->objects[closes_object_loc_id].pose.pose.position.x >= roi_min_lng_ &&
-      std::abs(radar_pc->objects[closes_object_loc_id].pose.pose.position.y) <= 2*roi_max_lat_){
-    radar_lead_found_ = true;
-    msg.lead_detected = true;
-    radar_lead_ = radar_pc->objects[closes_object_loc_id];
-  } else {
-    radar_lead_found_ = false;
-    msg.lead_detected = false;
-    confidence_ = 0;
-  }
-
+	msg.lead_detected = lead_.initilized;
   msg.header.frame_id = "radar_fc";
   msg.header.stamp = ros::Time::now();
   if (msg.lead_detected){
-    msg.range = apsrc_lead_vehicle_detection::radar_objs_dist_func(ref, radar_lead_);
-    msg.speed = radar_lead_.twist.twist.linear.x + current_velocity_;
+		apsrc_lead_vehicle_detection::KF_update_no_observation(lead_);
+    msg.range = std::sqrt(lead_.X(0) * lead_.X(0) + lead_.X(2) * lead_.X(2));
+    msg.speed = std::sqrt((current_velocity_ + lead_.X(1)) * (current_velocity_ + lead_.X(1)) + lead_.X(3) * lead_.X(3)) ;
     if (msg.speed < current_velocity_ * min_lead_ego_speed_rate_){
       msg.emergency_stop = true;
     }
     msg.speed_mph = msg.speed * 2.23694;
-    msg.confidence = confidence_;
-    msg.lidar = lidar_lead_found_;
+    msg.confidence = static_cast<uint8_t>(1 / (1 + lead_.P.determinant())*100);
   }
   lead_vehicle_pub_.publish(msg);
 
@@ -172,7 +107,7 @@ void ApsrcLeadVehicleDetectionNl::radarPointCloudCallback(const derived_object_m
 
     visualization_msgs::Marker text; 
     text.header.frame_id = "radar_fc";
-    text.header.stamp = ros::Time::now();
+    text.header.stamp = msg.header.stamp;
     text.id = 1;
     text.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
     text.action = visualization_msgs::Marker::ADD;
@@ -190,11 +125,11 @@ void ApsrcLeadVehicleDetectionNl::radarPointCloudCallback(const derived_object_m
     text.color.a = 1.0;
 
     if (msg.lead_detected){
-      marker.pose.position.x = radar_lead_.pose.pose.position.x;
-      marker.pose.position.y = radar_lead_.pose.pose.position.y;
+      marker.pose.position.x = lead_.X(0);
+      marker.pose.position.y = lead_.X(2);
       marker.action = visualization_msgs::Marker::ADD;     
-      text.pose.position.x = radar_lead_.pose.pose.position.x;
-      text.pose.position.y = radar_lead_.pose.pose.position.y;
+      text.pose.position.x = lead_.X(0);
+      text.pose.position.y = lead_.X(2);
       std::string stop_str = msg.emergency_stop ? "true" : "false";
       text.text = "speed: " + std::to_string(msg.speed) + "m/s\n" +
       std::to_string(msg.speed_mph) + "mph\n" + 
@@ -234,61 +169,47 @@ void ApsrcLeadVehicleDetectionNl::radarPointCloudCallback(const derived_object_m
 
 void ApsrcLeadVehicleDetectionNl::lidarObjectDetectionCallback(const autoware_msgs::DetectedObjectArray::ConstPtr& lidar_objs)
 {
-  bool found = false;
-  float min_dist;
-
-  if (lidar_lead_found_){
-    min_dist = apsrc_lead_vehicle_detection::lidar_objs_dist_func(lidar_objs->objects[0], lidar_lead_);
-    size_t closes_object_loc_id = 0;
-    for (size_t i = 0; i < lidar_objs->objects.size(); ++i){
-      if (ApsrcLeadVehicleDetectionNl::emergency_stop_func(lidar_objs->objects[i])){
-        stop_now_ = true;
-        return;
-      }
-      if (lidar_objs->objects[i].label == "car"){
-        float dist = apsrc_lead_vehicle_detection::lidar_objs_dist_func(lidar_objs->objects[i], lidar_lead_);
-        if (dist <= min_dist){
-          min_dist = dist;
-          closes_object_loc_id = i;
-          found = true;
-        }
-      }
-    }
-    if (found && min_dist <= roi_max_dist_){
-      lidar_lead_ = lidar_objs->objects[closes_object_loc_id];
-      lidar_lead_t_ = lidar_lead_;
-      lidar_lead_t_.pose.position.x -= lidar_radar_dist_;
-      confidence_ = ++confidence_ > 100 ? 100 : confidence_;
-    } else {
-      found = false;
-    }
-  } else {
-    confidence_ = --confidence_ < 0 ? 0 : confidence_;
-    autoware_msgs::DetectedObject ref = {};
-    ref.pose.position.x = 0;
-    ref.pose.position.y = 0;
-    min_dist = apsrc_lead_vehicle_detection::lidar_objs_dist_func(lidar_objs->objects[0], ref);
-    size_t closes_object_loc_id = 0;
-    for (size_t i = 0; i < lidar_objs->objects.size(); ++i){
-      float dist = apsrc_lead_vehicle_detection::lidar_objs_dist_func(lidar_objs->objects[i], ref);
-      if (std::abs(lidar_objs->objects[i].pose.position.y) <= roi_max_lat_ && lidar_objs->objects[i].pose.position.x >= roi_min_lng_ + 3.588){
-        if (ApsrcLeadVehicleDetectionNl::emergency_stop_func(lidar_objs->objects[i])){
-          stop_now_ = true;
-          return;
-        }
-        min_dist = dist;
-        closes_object_loc_id = i;
-        found = true;
-      }
-    }
-    if (found) {
-      lidar_lead_ = lidar_objs->objects[closes_object_loc_id];
-      lidar_lead_t_ = lidar_lead_;
-      lidar_lead_t_.pose.position.x -= lidar_radar_dist_;
-    }
-  }
-  lidar_lead_found_ = found;
-  stop_now_ = false;
+	float min_dist;
+	size_t closes_object_loc_id;
+	if (lead_.initilized) {
+		min_dist = apsrc_lead_vehicle_detection::lidar_KFobj_dist_func(lidar_objs->objects[0], lead_, lidar_radar_dist_);
+		closes_object_loc_id = 0;
+		for (size_t i = 0; i < lidar_objs->objects.size(); ++i){
+			if (ApsrcLeadVehicleDetectionNl::emergency_stop_func(lidar_objs->objects[i])){
+				stop_now_ = true;
+				return;
+			}
+			if (lidar_objs->objects[i].label == "car"){
+				float dist = apsrc_lead_vehicle_detection::lidar_KFobj_dist_func(lidar_objs->objects[i], lead_, lidar_radar_dist_);
+				if (dist <= min_dist){
+					min_dist = dist;
+					closes_object_loc_id = i;
+				}
+			}
+		}
+//		need mutex
+		lidar_lead_ = lidar_objs->objects[closes_object_loc_id];
+		apsrc_lead_vehicle_detection::KF_update_lidar(lead_,
+																									lidar_objs->objects[closes_object_loc_id].pose.position.x - lidar_radar_dist_,
+																									lidar_objs->objects[closes_object_loc_id].pose.position.y);
+	} else {
+		autoware_msgs::DetectedObject ref = {};
+		min_dist = apsrc_lead_vehicle_detection::lidar_objs_dist_func(lidar_objs->objects[0], ref);
+		closes_object_loc_id = 0;
+		for (size_t i = 0; i < lidar_objs->objects.size(); ++i){
+			float dist = apsrc_lead_vehicle_detection::lidar_objs_dist_func(lidar_objs->objects[i], ref);
+			if (std::abs(lidar_objs->objects[i].pose.position.y) <= roi_max_lat_ && lidar_objs->objects[i].pose.position.x >= roi_min_lng_ + lidar_radar_dist_ && dist <= min_dist){
+				if (ApsrcLeadVehicleDetectionNl::emergency_stop_func(lidar_objs->objects[i])){
+					stop_now_ = true;
+					return;
+				}
+				min_dist = dist;
+				closes_object_loc_id = i;
+			}
+		}
+//		need mutex
+		lead_.initilized = ApsrcLeadVehicleDetectionNl::trackInit(lidar_objs->objects[closes_object_loc_id]);
+	}
 }
 
 void ApsrcLeadVehicleDetectionNl::velocityCallback(const geometry_msgs::TwistStamped::ConstPtr& current_velocity)
@@ -305,6 +226,22 @@ bool ApsrcLeadVehicleDetectionNl::emergency_stop_func(autoware_msgs::DetectedObj
   }
   return false;
 }
+
+bool ApsrcLeadVehicleDetectionNl::trackInit(autoware_msgs::DetectedObject obj)
+{
+	if (lead_.initilized){
+		return true;
+	} else {
+		try {
+			lead_.X(0) = obj.pose.position.x - lidar_radar_dist_;
+			lead_.X(2) = obj.pose.position.y;
+			lead_.stamp = ros::Time::now();
+			return true;
+		} catch (const std::exception& e){
+			return false;
+		}
+	}
+}	
 }  // namespace apsrc_lead_vehicle_detection
 PLUGINLIB_EXPORT_CLASS(apsrc_lead_vehicle_detection::ApsrcLeadVehicleDetectionNl,
                        nodelet::Nodelet);

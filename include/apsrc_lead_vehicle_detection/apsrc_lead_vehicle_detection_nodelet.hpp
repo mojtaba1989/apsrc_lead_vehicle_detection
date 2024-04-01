@@ -7,16 +7,14 @@
 #include <pluginlib/class_list_macros.h>
 #include <thread>
 #include <mutex>
-#include <Eigen/Dense>
-
+#include <eigen3/Eigen/Dense>
 
 #include <geometry_msgs/TwistStamped.h>
 #include <derived_object_msgs/ObjectWithCovarianceArray.h>
 #include <derived_object_msgs/ObjectWithCovariance.h>
 #include <autoware_msgs/DetectedObjectArray.h>
 #include <autoware_msgs/DetectedObject.h>
-
-#include <apsrc_msgs/LaedVehicle.h>
+#include <apsrc_msgs/LeadVehicle.h>
 #include <visualization_msgs/Marker.h>
 
 #include <tf2_ros/transform_listener.h>
@@ -50,6 +48,7 @@ private:
   void velocityCallback(const geometry_msgs::TwistStamped::ConstPtr& current_velocity);
   void radarPointCloudCallback(const derived_object_msgs::ObjectWithCovarianceArray::ConstPtr& radar_pc);
   void lidarObjectDetectionCallback(const autoware_msgs::DetectedObjectArray::ConstPtr& lidar_objs);
+  bool trackInit(autoware_msgs::DetectedObject obj);
   void timerCallBack();
 
   // Nodehandles
@@ -114,6 +113,22 @@ float lidar_objs_dist_func(autoware_msgs::DetectedObject objA, autoware_msgs::De
   float dist = std::sqrt(dx * dx + dy * dy);
   return dist;
 };
+	
+float lidar_KFobj_dist_func(autoware_msgs::DetectedObject objA, KFpoint objB, double x_offset)
+{
+  float dx = objA.pose.position.x - objB.X(0) - x_offset;
+  float dy = objA.pose.position.y - objB.X(2);
+  float dist = std::sqrt(dx * dx + dy * dy);
+  return dist;
+};
+	
+float radar_KFobj_dist_func(derived_object_msgs::ObjectWithCovariance objA, KFpoint objB)
+{
+  float dx = objA.pose.pose.position.x - objB.X(0);
+  float dy = objA.pose.pose.position.y - objB.X(2);
+  float dist = std::sqrt(dx * dx + dy * dy);
+  return dist;
+};
 
 float lidar_radar_dist_func(autoware_msgs::DetectedObject objA, derived_object_msgs::ObjectWithCovariance pointB)
 {
@@ -166,6 +181,5 @@ float KF_update_radar(KFpoint obj, float x, float dx, float y, float dy)
   }
   return obj.P.determinant();
 };
-
 }  // namespace apsrc_lead_vehicle_detection
 #endif  // ApsrcLeadVehicleDetectionNl_H
