@@ -29,6 +29,7 @@ void ApsrcLeadVehicleDetectionNl::onInit()
 
   // iterate
   timer_ = nh_.createTimer(ros::Duration(0.1), std::bind(&ApsrcLeadVehicleDetectionNl::timerCallBack, this));
+  lidar_x_gain_(0,0) = 4;
 }
 
 void ApsrcLeadVehicleDetectionNl::loadParams()
@@ -41,6 +42,7 @@ void ApsrcLeadVehicleDetectionNl::loadParams()
   pnh_.param("min_time_gap", min_time_gap_, 2.0);
   pnh_.param("min_lead_ego_speed_rate", min_lead_ego_speed_rate_, 2.0);
   pnh_.param("visulization", visualization_, true);
+  pnh_.param("max_miss", max_miss_, 10);
   
   ROS_INFO("Parameters Loaded");
 }
@@ -58,8 +60,10 @@ void ApsrcLeadVehicleDetectionNl::radarPointCloudCallback(const derived_object_m
 			}
 		}
 //		need mutex
-		apsrc_lead_vehicle_detection::KF_update_radar(lead_,
-																								 radar_pc->objects[closes_object_loc_id].pose.pose.position.x,
+    if (min_dist <= roi_max_dist_) {
+      counter_ = 0;
+    }
+		ApsrcLeadVehicleDetectionNl::KF_update_radar(radar_pc->objects[closes_object_loc_id].pose.pose.position.x,
 																								 radar_pc->objects[closes_object_loc_id].twist.twist.linear.x,
 																								 radar_pc->objects[closes_object_loc_id].pose.pose.position.y,
 																								 radar_pc->objects[closes_object_loc_id].twist.twist.linear.y
@@ -68,22 +72,65 @@ void ApsrcLeadVehicleDetectionNl::radarPointCloudCallback(const derived_object_m
 	}
 }
 
+void ApsrcLeadVehicleDetectionNl::lidarObjectDetectionCallback(const autoware_msgs::DetectedObjectArray::ConstPtr& lidar_objs)
+{
+	float min_dist;
+	size_t closes_object_loc_id;
+	if (lead_.initilized) {
+		min_dist = apsrc_lead_vehicle_detection::lidar_KFobj_dist_func(lidar_objs->objects[0], lead_, lidar_radar_dist_);
+		closes_object_loc_id = 0;
+		for (size_t i = 0; i < lidar_objs->objects.size(); ++i){
+			if (ApsrcLeadVehicleDetectionNl::emergency_stop_func(lidar_objs->objects[i])){
+				stop_now_ = true;
+				return;
+			}
+			if (lidar_objs->objects[i].label == "car"){
+				float dist = apsrc_lead_vehicle_detection::lidar_KFobj_dist_func(lidar_objs->objects[i], lead_, lidar_radar_dist_);
+				if (dist <= min_dist){
+					min_dist = dist;
+					closes_object_loc_id = i;
+				}
+			}
+		}
+//		need mutex
+		ApsrcLeadVehicleDetectionNl::KF_update_lidar(lidar_objs->objects[closes_object_loc_id].pose.position.x - lidar_radar_dist_,
+																									lidar_objs->objects[closes_object_loc_id].pose.position.y);
+	} else {
+		autoware_msgs::DetectedObject ref = {};
+		min_dist = apsrc_lead_vehicle_detection::lidar_objs_dist_func(lidar_objs->objects[0], ref);
+		closes_object_loc_id = 0;
+		for (size_t i = 0; i < lidar_objs->objects.size(); ++i){
+			float dist = apsrc_lead_vehicle_detection::lidar_objs_dist_func(lidar_objs->objects[i], ref);
+			if (std::abs(lidar_objs->objects[i].pose.position.y) <= roi_max_lat_ && lidar_objs->objects[i].pose.position.x >= roi_min_lng_ + lidar_radar_dist_ && dist <= min_dist){
+				if (ApsrcLeadVehicleDetectionNl::emergency_stop_func(lidar_objs->objects[i])){
+					stop_now_ = true;
+					return;
+				}
+				min_dist = dist;
+				closes_object_loc_id = i;
+			}
+		}
+//		need mutex
+		lead_.initilized = ApsrcLeadVehicleDetectionNl::trackInit(lidar_objs->objects[closes_object_loc_id]);
+	}
+}
+
 void ApsrcLeadVehicleDetectionNl::timerCallBack()
 {
   apsrc_msgs::LeadVehicle msg;
   msg.emergency_stop = stop_now_;
-	msg.lead_detected = lead_.initilized;
+	msg.lead_detected = counter_ <= max_miss_ + 2;
   msg.header.frame_id = "radar_fc";
   msg.header.stamp = ros::Time::now();
   if (msg.lead_detected){
-		apsrc_lead_vehicle_detection::KF_update_no_observation(lead_);
+		ApsrcLeadVehicleDetectionNl::KF_update_no_observation();
     msg.range = std::sqrt(lead_.X(0) * lead_.X(0) + lead_.X(2) * lead_.X(2));
     msg.speed = std::sqrt((current_velocity_ + lead_.X(1)) * (current_velocity_ + lead_.X(1)) + lead_.X(3) * lead_.X(3)) ;
     if (msg.speed < current_velocity_ * min_lead_ego_speed_rate_){
       msg.emergency_stop = true;
     }
     msg.speed_mph = msg.speed * 2.23694;
-    msg.confidence = static_cast<uint8_t>(1 / (1 + lead_.P.determinant())*100);
+    msg.confidence = static_cast<uint8_t>(1 / std::sqrt(lead_.P.determinant())*100);
   }
   lead_vehicle_pub_.publish(msg);
 
@@ -135,7 +182,8 @@ void ApsrcLeadVehicleDetectionNl::timerCallBack()
       std::to_string(msg.speed_mph) + "mph\n" + 
       "dist: "  + std::to_string(msg.range) + "m\n" + 
       "Conf: " + std::to_string(msg.confidence) + "%\n" +
-      "stop_now: " + stop_str;
+      "counter: " + std::to_string(counter_) + "\n" +
+      "detected: " + std::to_string(msg.lead_detected);
     } else {
       marker.action = visualization_msgs::Marker::DELETE;
       text.action = visualization_msgs::Marker::DELETE;
@@ -167,51 +215,6 @@ void ApsrcLeadVehicleDetectionNl::timerCallBack()
   }
 }
 
-void ApsrcLeadVehicleDetectionNl::lidarObjectDetectionCallback(const autoware_msgs::DetectedObjectArray::ConstPtr& lidar_objs)
-{
-	float min_dist;
-	size_t closes_object_loc_id;
-	if (lead_.initilized) {
-		min_dist = apsrc_lead_vehicle_detection::lidar_KFobj_dist_func(lidar_objs->objects[0], lead_, lidar_radar_dist_);
-		closes_object_loc_id = 0;
-		for (size_t i = 0; i < lidar_objs->objects.size(); ++i){
-			if (ApsrcLeadVehicleDetectionNl::emergency_stop_func(lidar_objs->objects[i])){
-				stop_now_ = true;
-				return;
-			}
-			if (lidar_objs->objects[i].label == "car"){
-				float dist = apsrc_lead_vehicle_detection::lidar_KFobj_dist_func(lidar_objs->objects[i], lead_, lidar_radar_dist_);
-				if (dist <= min_dist){
-					min_dist = dist;
-					closes_object_loc_id = i;
-				}
-			}
-		}
-//		need mutex
-		lidar_lead_ = lidar_objs->objects[closes_object_loc_id];
-		apsrc_lead_vehicle_detection::KF_update_lidar(lead_,
-																									lidar_objs->objects[closes_object_loc_id].pose.position.x - lidar_radar_dist_,
-																									lidar_objs->objects[closes_object_loc_id].pose.position.y);
-	} else {
-		autoware_msgs::DetectedObject ref = {};
-		min_dist = apsrc_lead_vehicle_detection::lidar_objs_dist_func(lidar_objs->objects[0], ref);
-		closes_object_loc_id = 0;
-		for (size_t i = 0; i < lidar_objs->objects.size(); ++i){
-			float dist = apsrc_lead_vehicle_detection::lidar_objs_dist_func(lidar_objs->objects[i], ref);
-			if (std::abs(lidar_objs->objects[i].pose.position.y) <= roi_max_lat_ && lidar_objs->objects[i].pose.position.x >= roi_min_lng_ + lidar_radar_dist_ && dist <= min_dist){
-				if (ApsrcLeadVehicleDetectionNl::emergency_stop_func(lidar_objs->objects[i])){
-					stop_now_ = true;
-					return;
-				}
-				min_dist = dist;
-				closes_object_loc_id = i;
-			}
-		}
-//		need mutex
-		lead_.initilized = ApsrcLeadVehicleDetectionNl::trackInit(lidar_objs->objects[closes_object_loc_id]);
-	}
-}
-
 void ApsrcLeadVehicleDetectionNl::velocityCallback(const geometry_msgs::TwistStamped::ConstPtr& current_velocity)
 {
   current_velocity_ = static_cast<uint16_t>(std::round(std::abs(current_velocity->twist.linear.x)));
@@ -241,7 +244,50 @@ bool ApsrcLeadVehicleDetectionNl::trackInit(autoware_msgs::DetectedObject obj)
 			return false;
 		}
 	}
-}	
+}
+
+void ApsrcLeadVehicleDetectionNl::KF_update_no_observation()
+{
+  float dT = (ros::Time::now() - lead_.stamp).toSec();
+  lead_.stamp = ros::Time::now();
+  lead_.F(0, 1) = dT;
+  lead_.F(2, 3) = dT;
+  lead_.X = lead_.F * lead_.X;
+  lead_.P = lead_.F * lead_.P * lead_.F.transpose() + Eigen::Matrix4f::Identity();
+  if (counter_ < 100) {counter_++;}
+}
+
+void ApsrcLeadVehicleDetectionNl::KF_update_lidar(float x, float y)
+{
+  ApsrcLeadVehicleDetectionNl::KF_update_no_observation();
+  try {
+    Eigen::Matrix<float, 4, 1> z = {x, lead_.X(1), y, lead_.X(3)};
+    Eigen::Matrix<float, 4, 1> Y = z - lead_.X;
+    Eigen::Matrix<float, 4, 4> S = lead_.P + Y * Y.transpose() * lidar_x_gain_;
+    Eigen::Matrix<float, 4, 4> K = lead_.P * S.inverse();
+    lead_.X = lead_.X + K * Y;
+    lead_.P = (Eigen::Matrix4f::Identity() - K) * lead_.P;
+  } catch (const std::exception& e) {
+    return;
+  }
+  return;
+}
+
+void ApsrcLeadVehicleDetectionNl::KF_update_radar(float x, float dx, float y, float dy)
+{
+  ApsrcLeadVehicleDetectionNl::KF_update_no_observation();
+  try {
+    Eigen::Matrix<float, 4, 1> z = {x, dx, y, dy};
+    Eigen::Matrix<float, 4, 1> Y = z - lead_.X;
+    Eigen::Matrix<float, 4, 4> S = lead_.P + Y * Y.transpose();
+    Eigen::Matrix<float, 4, 4> K = lead_.P * S.inverse();
+    lead_.X = lead_.X + K * Y;
+    lead_.P = lead_.P * (Eigen::Matrix4f::Identity() - K);
+  } catch (const std::exception& e) {
+    return;
+  }
+  return;
+}
 }  // namespace apsrc_lead_vehicle_detection
 PLUGINLIB_EXPORT_CLASS(apsrc_lead_vehicle_detection::ApsrcLeadVehicleDetectionNl,
                        nodelet::Nodelet);
