@@ -26,6 +26,9 @@ void ApsrcLeadVehicleDetectionNl::onInit()
   current_velocity_sub_ = nh_.subscribe("current_velocity", 1, &ApsrcLeadVehicleDetectionNl::velocityCallback, this);
   radar_point_cloud_sub_ = nh_.subscribe(radar_pc_topic_name_, 1, &ApsrcLeadVehicleDetectionNl::radarPointCloudCallback, this);
   lidar_detection_sub_ = nh_.subscribe(lidar_objs_topic_name_, 1, &ApsrcLeadVehicleDetectionNl::lidarObjectDetectionCallback, this);
+
+  // iterate
+  timer_ = nh_.createTimer(ros::Duration(0.1), std::bind(&ApsrcLeadVehicleDetectionNl::timerCallBack, this));
 }
 
 void ApsrcLeadVehicleDetectionNl::loadParams()
@@ -44,7 +47,6 @@ void ApsrcLeadVehicleDetectionNl::loadParams()
 
 void ApsrcLeadVehicleDetectionNl::radarPointCloudCallback(const derived_object_msgs::ObjectWithCovarianceArray::ConstPtr& radar_pc)
 {
-  std::vector<apsrc_lead_vehicle_detection::radarPoint> point_array = {};
   derived_object_msgs::ObjectWithCovariance ref;
   ref.pose.pose.position.x = 0;
   ref.pose.pose.position.y = 0;
@@ -64,9 +66,9 @@ void ApsrcLeadVehicleDetectionNl::radarPointCloudCallback(const derived_object_m
         }
       }
       if (found_any){
-        double min_dist = apsrc_lead_vehicle_detection::radar_objs_dist_func(lead_, radar_pc->objects[within_range[0]]);
+        double min_dist = apsrc_lead_vehicle_detection::radar_objs_dist_func(radar_lead_, radar_pc->objects[within_range[0]]);
         for(size_t j = 0; j < within_range.size(); ++j){
-          float dist = apsrc_lead_vehicle_detection::radar_objs_dist_func(lead_, radar_pc->objects[within_range[j]]);
+          float dist = apsrc_lead_vehicle_detection::radar_objs_dist_func(radar_lead_, radar_pc->objects[within_range[j]]);
           if (dist <= min_dist){
             min_dist = dist;
             closes_object_loc_id = within_range[j];
@@ -78,7 +80,7 @@ void ApsrcLeadVehicleDetectionNl::radarPointCloudCallback(const derived_object_m
       std::vector<size_t> within_range(10);
       found_any = false;
       for (size_t i = 0; i < radar_pc->objects.size(); ++i){
-        float dist = apsrc_lead_vehicle_detection::radar_objs_dist_func(lead_, radar_pc->objects[i]);
+        float dist = apsrc_lead_vehicle_detection::radar_objs_dist_func(radar_lead_, radar_pc->objects[i]);
         if (dist < roi_max_dist_){
           within_range.push_back(i);
           found_any = true;
@@ -129,7 +131,7 @@ void ApsrcLeadVehicleDetectionNl::radarPointCloudCallback(const derived_object_m
       std::abs(radar_pc->objects[closes_object_loc_id].pose.pose.position.y) <= 2*roi_max_lat_){
     radar_lead_found_ = true;
     msg.lead_detected = true;
-    lead_ = radar_pc->objects[closes_object_loc_id];
+    radar_lead_ = radar_pc->objects[closes_object_loc_id];
   } else {
     radar_lead_found_ = false;
     msg.lead_detected = false;
@@ -139,8 +141,8 @@ void ApsrcLeadVehicleDetectionNl::radarPointCloudCallback(const derived_object_m
   msg.header.frame_id = "radar_fc";
   msg.header.stamp = ros::Time::now();
   if (msg.lead_detected){
-    msg.range = apsrc_lead_vehicle_detection::radar_objs_dist_func(ref, lead_);
-    msg.speed = lead_.twist.twist.linear.x + current_velocity_;
+    msg.range = apsrc_lead_vehicle_detection::radar_objs_dist_func(ref, radar_lead_);
+    msg.speed = radar_lead_.twist.twist.linear.x + current_velocity_;
     if (msg.speed < current_velocity_ * min_lead_ego_speed_rate_){
       msg.emergency_stop = true;
     }
@@ -188,11 +190,11 @@ void ApsrcLeadVehicleDetectionNl::radarPointCloudCallback(const derived_object_m
     text.color.a = 1.0;
 
     if (msg.lead_detected){
-      marker.pose.position.x = lead_.pose.pose.position.x;
-      marker.pose.position.y = lead_.pose.pose.position.y;
+      marker.pose.position.x = radar_lead_.pose.pose.position.x;
+      marker.pose.position.y = radar_lead_.pose.pose.position.y;
       marker.action = visualization_msgs::Marker::ADD;     
-      text.pose.position.x = lead_.pose.pose.position.x;
-      text.pose.position.y = lead_.pose.pose.position.y;
+      text.pose.position.x = radar_lead_.pose.pose.position.x;
+      text.pose.position.y = radar_lead_.pose.pose.position.y;
       std::string stop_str = msg.emergency_stop ? "true" : "false";
       text.text = "speed: " + std::to_string(msg.speed) + "m/s\n" +
       std::to_string(msg.speed_mph) + "mph\n" + 
