@@ -49,6 +49,9 @@ void ApsrcLeadVehicleDetectionNl::loadParams()
 
 void ApsrcLeadVehicleDetectionNl::radarPointCloudCallback(const derived_object_msgs::ObjectWithCovarianceArray::ConstPtr& radar_pc)
 {
+  if (radar_pc->objects.size() == 0){
+    return;
+  }
 	if (lead_.initilized){
   	size_t closes_object_loc_id = 0;
 		float min_dist = apsrc_lead_vehicle_detection::radar_KFobj_dist_func(radar_pc->objects[0], lead_);
@@ -74,6 +77,9 @@ void ApsrcLeadVehicleDetectionNl::radarPointCloudCallback(const derived_object_m
 
 void ApsrcLeadVehicleDetectionNl::lidarObjectDetectionCallback(const autoware_msgs::DetectedObjectArray::ConstPtr& lidar_objs)
 {
+  if (lidar_objs->objects.size() == 0){
+    return;
+  }
 	float min_dist;
 	size_t closes_object_loc_id;
 	if (lead_.initilized) {
