@@ -5,7 +5,6 @@
   <arg name="roi_max_lat" default="2.0"/>
   <arg name="roi_min_lng" default="1.0"/>
   <arg name="roi_max_dist" default="2.0"/>
-  <arg name="max_miss" default="10"/>
   <!-- Emergency Stop Signal -->
   <arg name="min_time_gap" default="0.9"/>
   <arg name="min_lead_ego_speed_rate" default="0.9"/>
@@ -18,7 +17,6 @@
     <param name="roi_max_lat" value="$(arg roi_max_lat)"/>
     <param name="roi_min_lng" value="$(arg roi_min_lng)"/>
     <param name="roi_max_dist" value="$(arg roi_max_dist)"/>
-    <param name="max_miss" value="$(arg max_miss)"/>
     <param name="min_time_gap" value="$(arg min_time_gap)"/>
     <param name="min_lead_ego_speed_rate" value="$(arg min_lead_ego_speed_rate)"/>
     <param name="visulization" value="$(arg visulization)"/>

@@ -8,6 +8,7 @@
 #include <thread>
 #include <mutex>
 #include <eigen3/Eigen/Dense>
+#include <pcl_conversions/pcl_conversions.h>
 
 #include <derived_object_msgs/ObjectWithCovarianceArray.h>
 #include <derived_object_msgs/ObjectWithCovariance.h>
@@ -27,7 +28,7 @@ struct KFpoint
   Eigen::Matrix<float, 4, 1> X = {0, 0, 0, 0};
   Eigen::Matrix<float, 4, 4> F = Eigen::Matrix4f::Identity();
   Eigen::Matrix<float, 4, 4> P = Eigen::Matrix4f::Identity();
-  bool tracked = false;
+  bool reset = false;
   bool initilized = false;
 };
 
@@ -41,14 +42,14 @@ private:
   // Init
   virtual void onInit();
   void loadParams();
-  std::mutex point_mtx_;
 
   // Subscriber callbacks
   void velocityCallback(const geometry_msgs::TwistStamped::ConstPtr& current_velocity);
   void radarPointCloudCallback(const derived_object_msgs::ObjectWithCovarianceArray::ConstPtr& radar_pc);
   void lidarObjectDetectionCallback(const autoware_msgs::DetectedObjectArray::ConstPtr& lidar_objs);
-  bool trackInit(autoware_msgs::DetectedObject obj);
+  void trackInit(autoware_msgs::DetectedObject obj);
   void timerCallBack();
+  bool pointsCallback(const sensor_msgs::PointCloud2_<std::allocator<void>> &msg);
 
   // Nodehandles
   ros::NodeHandle nh_, pnh_;
@@ -65,21 +66,21 @@ private:
 
   // Current velocity of the vehicle (mm/s)
   uint16_t current_velocity_ = 0;
-  ros::Time current_velocity_rcvd_time_;
+  double accel_ = 0;
 
   // Kalman filter
   KFpoint lead_;
   void KF_update_no_observation();
   void KF_update_lidar(float x, float y);
   void KF_update_radar(float x, float dx, float y, float dy);
-  int counter_ = 100;
-
+  
   // Radar read
   std::string radar_pc_topic_name_;
 
   // Lidar object
   std::string lidar_objs_topic_name_;
   Eigen::Matrix<float, 4, 4> lidar_x_gain_ = Eigen::Matrix4f::Identity();
+  pcl::PointCloud<pcl::PointXYZ> points_;
 
   // Params
   double roi_max_lat_ = 2.0;
@@ -87,13 +88,15 @@ private:
   double roi_max_dist_ = 5.0;
   double min_time_gap_ = 0.9;
   double min_lead_ego_speed_rate_ = 0.5;
-  int max_miss_ = 10;
 
   // Internal
   double lidar_radar_dist_ = 3.588; // [m] Pacifica
   bool emergency_stop_func(autoware_msgs::DetectedObject obj);
   bool visualization_;
   bool stop_now_ = false;
+  int counter_ = 0;
+  std::mutex kf_lock_;
+  std::mutex read_lock_;
 
 };
 
@@ -135,6 +138,22 @@ float lidar_radar_dist_func(autoware_msgs::DetectedObject objA, derived_object_m
   float dy = objA.pose.position.y - pointB.pose.pose.position.y;
   float dist = std::sqrt(dx * dx + dy * dy);
   return dist;
+};
+
+size_t search_func(pcl::PointCloud<pcl::PointXYZ> pts)
+{
+  if (pts.size() == 0){
+    return -1;
+  }
+  size_t idC = 0;
+  float min_x = pts[0].x;
+  for (size_t i = 0; i < pts.size();++i){
+    if (pts[i].x < min_x){
+      idC = i;
+      min_x = pts[i].x;
+    }
+  }
+  return idC;
 };
 }  // namespace apsrc_lead_vehicle_detection
 #endif  // ApsrcLeadVehicleDetectionNl_H

@@ -13,6 +13,8 @@ set(catkin_deps
     roslint
     std_msgs
     derived_object_msgs
+    pcl_conversions
+    pcl_ros
 )
 
 find_package(catkin REQUIRED ${catkin_deps})
@@ -20,13 +22,10 @@ find_package(Boost REQUIRED)
 find_package(Eigen3 REQUIRED)
 
 if (NOT EIGEN3_FOUND)
-    message("Eigen Not FOUND!!!!!!!!!!!!!!!!!!!!!!")
-    # Fallback to cmake_modules
     find_package(cmake_modules REQUIRED)
     find_package(Eigen REQUIRED)
     set(EIGEN3_INCLUDE_DIRS ${EIGEN_INCLUDE_DIRS})
-    set(EIGEN3_LIBRARIES ${EIGEN_LIBRARIES})  # Not strictly necessary as Eigen is head only
-    # Possibly map additional variables to the EIGEN3_ prefix.
+    set(EIGEN3_LIBRARIES ${EIGEN_LIBRARIES}) 
 else ()
     set(EIGEN3_INCLUDE_DIRS ${EIGEN3_INCLUDE_DIR})
 endif ()
