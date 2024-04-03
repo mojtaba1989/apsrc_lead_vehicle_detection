@@ -44,6 +44,9 @@ void ApsrcLeadVehicleDetectionNl::loadParams()
 
 void ApsrcLeadVehicleDetectionNl::radarPointCloudCallback(const derived_object_msgs::ObjectWithCovarianceArray::ConstPtr& radar_pc)
 {
+  if (radar_pc->objects.size()==0){
+    return;
+  }
   std::vector<apsrc_lead_vehicle_detection::radarPoint> point_array = {};
   derived_object_msgs::ObjectWithCovariance ref;
   ref.pose.pose.position.x = 0;
@@ -232,6 +235,9 @@ void ApsrcLeadVehicleDetectionNl::radarPointCloudCallback(const derived_object_m
 
 void ApsrcLeadVehicleDetectionNl::lidarObjectDetectionCallback(const autoware_msgs::DetectedObjectArray::ConstPtr& lidar_objs)
 {
+  if (lidar_objs->objects.size() == 0){
+    return;
+  }
   bool found = false;
   float min_dist;
 
