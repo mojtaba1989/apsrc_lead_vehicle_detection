@@ -155,12 +155,12 @@ void ApsrcLeadVehicleDetectionNl::timerCallBack()
   if (msg.lead_detected){
 		ApsrcLeadVehicleDetectionNl::KF_update_no_observation();
     msg.range = std::sqrt(lead_.X(0) * lead_.X(0) + lead_.X(2) * lead_.X(2));
-    msg.speed = std::sqrt((current_velocity_ + lead_.X(1)) * (current_velocity_ + lead_.X(1)) + lead_.X(3) * lead_.X(3)) ;
-    if (msg.speed < current_velocity_ * min_lead_ego_speed_rate_){
+    msg.speed_mps = std::sqrt((current_velocity_ + lead_.X(1)) * (current_velocity_ + lead_.X(1)) + lead_.X(3) * lead_.X(3));
+    msg.relative_speed_mps = std::sqrt(lead_.X(1) * lead_.X(1) + lead_.X(3) * lead_.X(3));
+    if (msg.speed_mps < current_velocity_ * min_lead_ego_speed_rate_){
       msg.emergency_stop = true;
     }
-    msg.speed_mph = msg.speed * 2.23694;
-    msg.azimuth_score = static_cast<uint8_t>(lead_.X(0)/msg.range*100);
+    msg.speed_mph = msg.speed_mps * 2.23694;
   }
   lead_vehicle_pub_.publish(msg);
 
@@ -208,11 +208,9 @@ void ApsrcLeadVehicleDetectionNl::timerCallBack()
       text.pose.position.x = lead_.X(0);
       text.pose.position.y = lead_.X(2);
       std::string stop_str = msg.emergency_stop ? "true" : "false";
-      text.text = "speed: " + std::to_string(msg.speed) + "m/s\n" +
+      text.text = "speed: " + std::to_string(msg.speed_mps) + "m/s\n" +
       std::to_string(msg.speed_mph) + "mph\n" + 
-      "dist: "  + std::to_string(msg.range) + "m\n" + 
-      "CoVar: " + std::to_string(msg.covar_score) + "%\n" +
-      "AzSc: " + std::to_string(msg.azimuth_score);
+      "dist: "  + std::to_string(msg.range) + "m\n";
     } else {
       marker.action = visualization_msgs::Marker::DELETE;
       text.action = visualization_msgs::Marker::DELETE;
